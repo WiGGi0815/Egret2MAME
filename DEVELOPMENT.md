@@ -324,7 +324,36 @@ At this point the development build has working USB auto-detection,
 five-button decoding, virtual X360 button bridging, trackball and
 spinner handling/scaling, and live GUI visualization.
 
-## 23. Clean-PC goal
+## 23. Reference / Tested MAME Version
+
+Egret2MAME was developed and tested primarily with the **official
+standalone MAME 0.289 for Windows**, using MAME's current built-in user
+interface and input system.
+
+This is the project's reference configuration.
+
+Older MAME releases, RetroArch cores, MAME 2003, third-party frontends
+and other emulator/input configurations may also work, but they are
+**not officially tested or guaranteed** unless explicitly documented by
+the project.
+
+Input handling can differ significantly between versions, cores and
+frontends, particularly for analog controls such as the **trackball and
+spinner/dial**. During development, for example, RetroArch with the MAME
+2003 core behaved differently when configuring Arkanoid's spinner/dial
+input.
+
+That does not necessarily mean such configurations cannot work. It means
+they are outside the currently tested support scope and users may need
+to determine the appropriate emulator/input settings themselves.
+
+When reporting an Egret2MAME issue, reproducing it with the official
+standalone **MAME 0.289 Windows build** is therefore the preferred
+reference test.
+
+------------------------------------------------------------------------
+
+## 24. Clean-PC goal
 
 The current prototype proves the concept, but USBPcap and ViGEmBus are
 still development/runtime dependencies.
