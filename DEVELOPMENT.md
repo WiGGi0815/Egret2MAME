@@ -489,3 +489,183 @@ later, the answer became:
 
 And perhaps the finished project can save the next EGRET owner from
 having to start at byte zero.
+
+---
+
+## September 23, 2026 — Replacing USBPcap with our own USB lower filter
+
+The next major development goal was to remove USBPcap from the runtime path. Direct HID access had already failed because Windows owns the EGRET's mouse collection exclusively, and Raw Input exposed the trackball but not the spinner and unusual button usages. The important question therefore became: **where can we observe the complete five-byte interrupt report without breaking the normal Windows HID stack?**
+
+### The wrong layer: HID collection upper filter
+
+The first KMDF experiments attached a filter around the HID collection. The drivers could be built and test-signed, but installing them caused the normal EGRET trackball to stop working. Even a deliberately minimal pass-through version reproduced the problem.
+
+That was useful evidence: the project was filtering at the wrong layer.
+
+Rather than continuing with trial-and-error builds, the actual Windows device stack was inspected. The physical USB device reported `HidUsb` as its service. Before the new filter work, the relevant stack showed USBPcap below `HidUsb`. Since USBPcap was already known to see all five raw bytes, this established the correct architectural direction: a **device-specific USB lower filter on the physical `USB\VID_0AE4&PID_0701` device**.
+
+### v0.10 — transparent USB lower-filter checkpoint
+
+EgretFilter v0.10 was intentionally minimal. It attached as a lower filter to the physical EGRET USB device and did not intercept or modify USB requests.
+
+The resulting stack was:
+
+```text
+HidUsb
+EgretFilter
+USBHUB3
+```
+
+The normal Windows trackball and spinner continued to work. This was the first proof that EgretFilter could live at the correct layer without disrupting the controller.
+
+### v0.11 — URB completion checkpoint
+
+v0.11 added handling for `IOCTL_INTERNAL_USB_SUBMIT_URB` and installed a completion routine, while deliberately avoiding payload inspection or modification.
+
+After reboot the driver was active as `oem96.inf`. The stack showed:
+
+```text
+HidUsb
+EgretFilter
+USBPcap
+USBHUB3
+```
+
+Trackball and spinner still worked normally. This proved that the filter could observe completion of USB requests while preserving the standard HID path.
+
+### v0.12 — complete five-byte report tap
+
+v0.12 added the part the project had been working toward: inspection of successfully completed bulk/interrupt IN URBs. On matching five-byte transfers, EgretFilter copies the returned bytes into its own protected buffer. It never modifies the original USB transfer buffer.
+
+The copied report retains the already established format:
+
+```text
+[Buttons Low] [Buttons High] [Trackball X] [Trackball Y] [Spinner]
+```
+
+A small read-only control interface (`\\.\EgretFilter`) and console viewer were added for verification.
+
+The test build was signed with the project's development test certificate and installed as `oem97.inf`. Windows reported the driver started successfully. The active stack then showed:
+
+```text
+HidUsb
+EgretFilter
+USBHUB3
+```
+
+Notably, USBPcap was no longer present in that device stack.
+
+The normal Windows trackball and spinner still worked. More importantly, the EgretFilter viewer produced reports for **every physical button, trackball movement and spinner movement**. This independently confirmed that the new filter sees the complete EGRET input stream.
+
+This was the decisive USBPcap-replacement milestone.
+
+### v0.32 — Egret2MAME switches to EgretFilter
+
+With the v0.12 report path proven, the known-good v0.31f GUI was used as the base for Egret2MAME v0.32. Only the input backend was intentionally replaced.
+
+The old runtime path:
+
+```text
+EGRET -> USBPcap -> Egret2MAME -> ViGEm / mouse injection -> MAME
+```
+
+became:
+
+```text
+EGRET -> EgretFilter v0.12 -> Egret2MAME v0.32 -> ViGEm / mouse injection -> MAME
+```
+
+The following known-good behavior from v0.31f was preserved:
+
+- five-button X360 mapping through ViGEm
+- trackball multiplier, default **3x**
+- spinner scaling, default **0.50x**
+- controller GUI and live button display
+- trackball live scope
+- button-alignment controls
+
+The USBPcap capture process and USBPcap root/device auto-detection were removed from the application backend. v0.32 reads the latest five-byte report directly from `\\.\EgretFilter`.
+
+### MAME 0.289 verification
+
+v0.32 was then tested with the project's reference emulator, **official standalone MAME 0.289 for Windows**.
+
+Result:
+
+- controller detected through EgretFilter: **PASS**
+- all five buttons: **PASS**
+- trackball: **PASS**
+- 3x trackball behavior: **PASS**
+- spinner: **PASS**
+- 0.50x spinner behavior: **PASS**
+- operation in MAME 0.289: **PASS**
+
+The GUI reported:
+
+```text
+CONTROLLER CONNECTED
+EgretFilter v0.12
+Direct 5-byte report backend
+```
+
+At this point **Egret2MAME no longer requires USBPcap to read the controller**.
+
+USBPcap and Wireshark remain installed on the development machine temporarily as comparison/recovery tools, but they are no longer part of the v0.32 runtime input path.
+
+### Current known-good checkpoint
+
+The current development reference is:
+
+- **EgretFilter v0.12** — complete read-only five-byte USB report tap
+- **Egret2MAME v0.32** — EgretFilter backend
+- **MAME 0.289 standalone Windows** — verified reference emulator
+- Trackball default: **3x**
+- Spinner default: **0.50x**
+- ViGEm still used for the virtual X360 button output
+
+v0.32 is intentionally being treated as a frozen known-good checkpoint before the next dependency is changed.
+
+### Development signing and Secure Boot
+
+The current EgretFilter build is a development driver signed with a local test certificate. Driver development was performed with Secure Boot disabled and Windows test signing enabled.
+
+After the successful v0.32 test, the development machine was returned toward normal operation:
+
+```text
+testsigning No
+```
+
+Secure Boot can then be restored in UEFI using the normal Windows UEFI mode. The development certificate and test-signed driver are **not** the intended public distribution mechanism.
+
+A public release must use a production-compatible Windows driver-signing path so that users can run with normal Secure Boot enabled and without Windows test mode.
+
+### What remains before 1.0
+
+The largest remaining external runtime dependency is **ViGEm**, currently used to present the five EGRET buttons to MAME as a virtual Xbox 360 controller. The next development phase will investigate replacing that dependency while preserving the known-good v0.32 behavior.
+
+The intended 1.0 experience remains:
+
+```text
+Fresh Windows 11
+        |
+Original TAITO EGRET II mini Paddle & Trackball Controller
+        |
+Install / start Egret2MAME
+        |
+Start official MAME
+        |
+Works
+```
+
+No separate Wireshark installation. No separate USBPcap installation. No Windows test mode. No requirement to disable Secure Boot.
+
+The project has therefore moved from proving that the unusual controller can be decoded to proving that its complete data path can be handled by an Egret2MAME-specific Windows driver.
+
+The original challenge was:
+
+> "It can't be done."
+
+The current development build answers:
+
+> "Apparently it can — without USBPcap, too."
+
