@@ -1,99 +1,309 @@
-# Egret2MAME -- Development History
+# Egret2MAME --- DEVELOPMENT.md
 
-## How it started
-
-I bought the **TAITO EGRET II mini Paddle & Trackball Controller**
-hoping that, sooner or later, someone would create a proper Windows/MAME
-driver or compatibility solution for it.
-
-That never really happened. When I looked into using the controller
-properly with MAME on Windows, the answer was basically: **it doesn't
-work**.
-
-So I decided to find out *why* --- and, with the help of ChatGPT,
-started building my own solution.
-
-What was supposed to be a small controller fix quickly turned into USB
-packet captures, HID descriptors, RawInput experiments, virtual
-controllers, driver development, MAME input-provider testing and a
-surprising amount of reverse engineering.
-
-**Egret2MAME was born.**
-
-The goal became simple:
-
-> Plug in the original EGRET II mini Paddle & Trackball Controller,
-> start Egret2MAME, start MAME and play.
-
-The project is intended as an independent community project. It is not
-developed, endorsed, sponsored or supported by TAITO.
+> **CURRENT DEVELOPMENT CHECKPOINT --- 5 October 2026**
+>
+> **Version:** Beta 0.815\
+> **Status:** TECHNICALLY COMPLETE / RELEASE CANDIDATE\
+> **Target:** Windows 11 + official standalone MAME 0.289\
+> **Controller:** TAITO EGRET II mini Paddle & Trackball Controller ---
+> VID `0AE4`, PID `0701`
+>
+> Beta 0.815 replaces the previous custom test-signed kernel-driver
+> architecture with a substantially simpler release path based on the
+> official signed USBPcap driver plus a user-mode Egret2MAME
+> application. The final candidate has been installed and uninstalled
+> successfully on a second Windows 11 PC with normal Windows security
+> settings, including Secure Boot enabled and Test Signing disabled.
+>
+> **Freeze rule:** The working Beta 0.815 program and installer should
+> not be changed for the public release unless a concrete defect is
+> found. Remaining work is documentation, credits/licensing, release
+> notes and final packaging.
 
 ------------------------------------------------------------------------
 
-## 1. Understanding the controller
+## 1. Scope of Beta 0.815
 
-The first task was finding out what the controller actually sends.
+This document deliberately describes **only the development path that
+led to Beta 0.815**.
+
+The older v0.4711 Beta 1 DEV branch remains preserved as a known-good
+historical fallback, but its custom `EgretFilter` /
+`EgretVirtualButtons` driver architecture is **not part of Beta 0.815**.
+
+The objective of this development cycle was:
+
+1.  keep the already proven EGRET controller functionality;
+2.  remove the requirement for our own test-signed kernel drivers;
+3.  run on a normal Windows 11 installation with **Secure Boot ON**;
+4.  run with **Test Signing OFF**;
+5.  require no manual driver-development preparation from the user;
+6.  retain trackball, spinner and all five physical buttons;
+7.  provide one normal Egret2MAME installer;
+8.  install the required signed USB capture component automatically;
+9.  uninstall cleanly again.
+
+The result is Beta 0.815.
+
+------------------------------------------------------------------------
+
+## 2. Final Beta 0.815 architecture
 
 ``` text
-Vendor ID:   0x0AE4
-Product ID:  0x0701
-Product:     TAITO USB Paddle & Trackball Controller
+TAITO EGRET II mini Paddle & Trackball Controller
+                    |
+                    | USB
+                    | VID 0AE4 / PID 0701
+                    v
+             Windows USB/HID stack
+                    |
+          +---------+---------+
+          |                   |
+          |                   v
+          |               USBPcap
+          |        (official signed driver)
+          |                   |
+          |                   v
+          |              Egret2MAME
+          |          direct capture/parser
+          |                   |
+          |          +--------+--------+
+          |          |                 |
+          v          v                 v
+     native mouse  extra mouse      keyboard
+       movement    correction       SendInput
+          |          |                 |
+          +----------+--------+--------+
+                            |
+                            v
+                           MAME
 ```
 
-Windows exposes the device primarily through a mouse HID collection.
-Initial HID inspection revealed unusual button usages `0x17`, `0x18`,
-`0x1A`, `0x1D` and `0x1E`. Unlike ordinary mouse buttons, these were not
-simply appearing in MAME as conventional mouse buttons.
+The physical controller remains attached to the normal Microsoft
+HID/mouse stack. Beta 0.815 does **not** replace the physical device
+with a custom Egret driver.
 
-The strange situation was therefore: the trackball worked through
-Windows, the buttons were not exposed to MAME in the useful form we
-needed, and the spinner behaved differently again.
+USBPcap is used to observe the raw USB interrupt traffic. Egret2MAME
+identifies the correct USBPcap root, determines the controller's current
+USB device address, decodes the controller report and uses the decoded
+values for the additional processing required by MAME.
 
-**What was the controller actually sending over USB?**
+The controller's native Windows mouse path remains useful for the
+physical trackball/spinner behavior. Egret2MAME adds the required
+scaling/correction and translates the five unusual buttons into normal
+keyboard input.
 
-## 2. Attempt #1 -- Direct Windows HID access
+------------------------------------------------------------------------
 
-The obvious solution was to open the HID device directly. The controller
-reports a Generic Desktop / Mouse top-level collection and Windows
-reported a six-byte HID input report.
+## 3. Why the previous driver path was replaced
 
-Direct reads failed with:
+The starting point for this cycle was the completed v0.4711 Beta 1 DEV
+build.
+
+That version proved that the complete controller could be made to work,
+but it depended on our own kernel components and development/test
+signing. For an experimental development system this was acceptable; for
+a public Windows release it was not the desired end state.
+
+The release requirement became:
+
+``` text
+Normal Windows 11
+Secure Boot ON
+Test Signing OFF
+No manually installed Egret development certificate
+No custom test-signed Egret kernel driver
+One Egret2MAME Setup
+```
+
+Instead of trying to production-sign and distribute the experimental
+Egret kernel drivers, the new cycle returned to USBPcap and investigated
+whether the entire required input path could be handled in user mode.
+
+That became the central change of Beta 0.815.
+
+------------------------------------------------------------------------
+
+## 4. Raw Input investigation
+
+Before committing to USBPcap as a runtime dependency, Windows-native
+input paths were checked again.
+
+Raw Input successfully exposed:
+
+-   trackball movement;
+-   spinner movement as mouse wheel input.
+
+However, the five unusual EGRET buttons were not available in the
+required form. No useful separate `RIM_TYPEHID` input path was found
+that solved the button problem.
+
+Result:
+
+``` text
+Raw Input — Trackball              PASS
+Raw Input — Spinner                PASS
+Raw Input — Five EGRET buttons     FAIL
+Raw Input as complete solution     REJECTED
+```
+
+Raw Input therefore could not replace the complete controller reader.
+
+------------------------------------------------------------------------
+
+## 5. Direct HID investigation
+
+A direct user-mode HID reader was also tested again.
+
+Windows exposes the EGRET controller primarily as a mouse HID
+collection. The relevant collection is owned by the Windows input stack.
+
+Attempting to open it directly resulted in:
 
 ``` text
 Win32 Error 5
 Access Denied
 ```
 
-Windows owns the mouse collection exclusively, preventing the simple
-user-mode reader we wanted.
+The reported HID input size was six bytes, but direct application access
+to the live mouse collection was not available.
+
+Result:
 
 ``` text
-Direct HID reader
-STATUS: FAILED
-REASON: Windows exclusive access to the mouse HID collection
+Direct HID open/read               FAIL
+Reason                             Windows owns mouse collection
 ```
 
-## 3. HID Analyzer experiments
+This confirmed that a normal direct HID reader was not a viable release
+solution.
 
-A small analyzer was built around `VID_0AE4` / `PID_0701`. The
-descriptor showed button usages in Usage Page `0x09`, range
-`0x16 ... 0x1E`, plus:
+------------------------------------------------------------------------
+
+## 6. USBPcap direct-access breakthrough
+
+USBPcap had previously been useful as a development/reverse-engineering
+tool. The important question for Beta 0.815 was whether Egret2MAME
+itself could communicate with USBPcap directly, without requiring
+Wireshark or `USBPcapCMD` as a runtime application.
+
+The answer was yes.
+
+After installing USBPcap and rebooting, the USBPcap kernel service was
+active and a native test program successfully opened USBPcap control
+devices directly:
 
 ``` text
-0x30 = X
-0x31 = Y
-0x38 = Wheel
+\\.\USBPcap1
+\\.\USBPcap2
+...
 ```
 
-This strongly suggested X/Y = trackball and Wheel = spinner/paddle. The
-descriptor helped, but direct reading remained blocked, so we needed to
-look below the normal HID layer.
+This established the new release direction:
 
-## 4. Attempt #2 -- USBPcap
+``` text
+Egret2MAME
+    |
+    +--> direct CreateFile access to USBPcap
+    |
+    +--> receive USB packet stream
+    |
+    +--> locate EGRET traffic
+    |
+    +--> decode reports
+```
 
-USBPcap was used to observe the real interrupt traffic. After decoding
-the capture header, the actual controller payload turned out to be
-**five bytes**, despite Windows reporting a six-byte HID input report:
+No Wireshark runtime dependency is required.
+
+No USBPcap command-line capture program is required.
+
+------------------------------------------------------------------------
+
+## 7. Automatic USBPcap root selection
+
+Hard-coding a value such as `\\.\USBPcap5` would only work on the
+development PC and was therefore unacceptable.
+
+Beta 0.815 development added automatic root matching.
+
+The EGRET device is first located through Windows Plug and Play using:
+
+``` text
+VID = 0AE4
+PID = 0701
+```
+
+The PnP parent chain is then walked upward until the USB root hub is
+found.
+
+Example observed root:
+
+``` text
+USB\ROOT_HUB30\9&2902E077&0&0
+```
+
+Each USBPcap control device can be queried with the USBPcap hub-symlink
+IOCTL:
+
+``` cpp
+CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+```
+
+After normalizing the returned root-hub names, Egret2MAME can match the
+physical root containing the EGRET controller to the corresponding
+`\\.\USBPcapN` capture device.
+
+Result:
+
+``` text
+Find EGRET by VID/PID               PASS
+Walk PnP parent chain               PASS
+Find physical USB root              PASS
+Map root to USBPcapN                PASS
+Hard-coded USBPcap number needed    NO
+```
+
+This was later validated by moving the controller between multiple USB
+ports on the clean test PC.
+
+------------------------------------------------------------------------
+
+## 8. USBPcap packet framing
+
+The direct capture reader was built around the actual USBPcap stream
+format.
+
+The capture begins with a 24-byte PCAP global header. Each captured
+packet then contains a 16-byte PCAP record header followed by the
+USBPcap packet header.
+
+The relevant fields used by the EGRET reader were identified as:
+
+``` text
+USBPcap device address     offset 19
+Endpoint                   offset 21
+Transfer type              offset 22
+Data length                offset 23
+Payload                    header length (normally 27)
+```
+
+The EGRET input traffic of interest is interrupt-IN traffic on:
+
+``` text
+Endpoint       0x81
+Transfer       1
+Data length    5
+```
+
+This allowed Egret2MAME to isolate candidate controller reports directly
+from the USB capture stream.
+
+------------------------------------------------------------------------
+
+## 9. Actual EGRET report format
+
+The development work confirmed that the useful controller payload is
+five bytes:
 
 ``` text
 Byte 0   Buttons Low
@@ -103,136 +313,282 @@ Byte 3   Trackball Y
 Byte 4   Spinner
 ```
 
-X, Y and Spinner are signed 8-bit relative deltas. Reports arrive at
-roughly 8 ms / 125 Hz through interrupt-IN endpoint `0x81`.
+Trackball X, trackball Y and spinner are signed 8-bit relative values.
 
-This was the first major breakthrough.
-
-## 5. Identifying every physical button
-
-Pressing each control individually while watching the raw reports
-produced the final mapping:
+The controller reports at approximately:
 
 ``` text
-Pink Select  HID 0x17   Byte 0 = 0x02
-Blue Start   HID 0x18   Byte 0 = 0x04
-White Menu   HID 0x1A   Byte 0 = 0x10
-Fire Left    HID 0x1D   Byte 0 = 0x80
-Fire Right   HID 0x1E   Byte 1 = 0x01
+8 ms interval
+~125 Hz
 ```
 
-The two large Fire buttons are independent. Usages `0x16`, `0x19`,
-`0x1B` and `0x1C` appear unused in our testing.
+This five-byte raw payload is the basis of the Beta 0.815 input decoder.
 
-## 6. Egret2MAME v0.19 -- First reliable decoder
+------------------------------------------------------------------------
 
-v0.19 was the first build that reliably displayed Buttons, Trackball X/Y
-and Spinner in real time. The USB protocol was no longer the mystery.
+## 10. Five-button decoding
 
-The next question was harder: **how do we feed those inputs back into
-MAME?**
-
-## 7. Attempt #3 -- Keyboard SendInput
-
-We converted the unusual buttons into normal keyboard events with
-Windows `SendInput`. It worked in ordinary Windows applications, but not
-as required with MAME's RawInput path.
-
-Changing MAME's provider could alter that behavior, but one of the
-project's goals had already become clear:
-
-> Egret2MAME should adapt to MAME rather than requiring users to
-> reconfigure MAME around Egret2MAME.
-
-The keyboard approach was therefore abandoned for the buttons.
-
-## 8. Attempt #4 -- Virtual Xbox controller
-
-The next experiment used **ViGEmBus + Nefarius.ViGEm.Client** to create
-a virtual Xbox 360 controller:
+All five physical buttons were mapped from the raw report.
 
 ``` text
-Pink Select  -> Xbox BACK
-Blue Start   -> Xbox START
-White Menu   -> Xbox X
-Fire Left    -> Xbox A
-Fire Right   -> Xbox B
+Physical control   HID usage   Raw report
+
+Pink SELECT        0x17        Byte 0 = 0x02
+Blue START         0x18        Byte 0 = 0x04
+White MENU         0x1A        Byte 0 = 0x10
+FIRE LEFT          0x1D        Byte 0 = 0x80
+FIRE RIGHT         0x1E        Byte 1 = 0x01
 ```
 
-MAME recognized it immediately. This became the first successful button
-bridge without special MAME keyboard-provider configuration.
+The two fire buttons are independent.
 
-## 9. Egret2MAME v0.22b -- Buttons solved
+This removed the need for the old virtual HID button driver.
 
-v0.22b became the reference build for button behavior:
+Result:
 
 ``` text
-EGRET button -> USB report -> Egret2MAME -> Virtual X360 controller -> MAME
+SELECT decode       PASS
+START decode        PASS
+MENU decode         PASS
+FIRE LEFT decode    PASS
+FIRE RIGHT decode   PASS
 ```
 
-All five physical buttons could be assigned normally in MAME.
+------------------------------------------------------------------------
 
-## 10. Attempt #5 -- Trackball through an Xbox analog stick
+## 11. Automatic USB device-address detection
 
-Because ViGEm worked for buttons, we tried the trackball as an Xbox
-stick. Technically it worked; practically it was wrong.
+The USB device address assigned by Windows cannot safely be hard-coded
+because it can change between systems, ports or connection states.
 
-A trackball reports **relative movement** (`+3 X`, `-2 Y`), whereas a
-joystick reports an **absolute position**. Fast spins felt unnatural.
+The direct-input test core therefore added automatic device-address
+discovery.
+
+After the correct USB root has been selected, Egret2MAME observes
+candidate interrupt reports matching the known EGRET characteristics:
 
 ``` text
-STATUS: REJECTED
-REASON: Relative trackball motion does not map naturally to an absolute joystick axis
+Endpoint       0x81
+Transfer       interrupt
+Data length    5
+Known report/button structure
 ```
 
-## 11. Attempt #6 -- Relative Windows mouse injection
+Candidate device addresses are counted during a short detection window.
+The most frequent valid candidate is selected, with a minimum-report
+threshold used to reject insufficient matches.
 
-Next, Egret2MAME kept the trackball relative and reinjected scaled mouse
-movement. Multipliers of `1x` through `6x` were added.
+The successful development implementation used approximately a
+1.5-second observation period and required at least five candidate
+reports.
 
-This worked through ordinary Windows mouse handling, but MAME exposed an
-important distinction: RawInput did not react to the injected/scaled
-path in the same way as other providers.
+This is intentionally constrained to the already uniquely matched USB
+root. It is not a general-purpose USB topology enumerator; it is a
+targeted EGRET identification method.
 
-## 12. Testing MAME input providers
-
-We tested RawInput, DirectInput and Win32. DInput and Win32 responded to
-the generated relative movement in our testing; RawInput behaved
-differently.
-
-That explained several apparently contradictory results. The behavior
-depended partly on **which Windows input path MAME was reading**.
-
-The primary target is current standalone MAME on Windows. RetroArch/MAME
-2003 experiments are separate compatibility work and are not the main
-development target.
-
-## 13. Centipede testing
-
-Centipede became a main trackball test. We experimented with MAME
-sensitivity values around `100/100`, `150/100` and `200`, together with
-Egret2MAME multipliers.
-
-A combination that felt substantially better during testing was:
+Result:
 
 ``` text
-Egret2MAME Trackball: 3x
-MAME X Sensitivity:   100
-MAME Y Sensitivity:   100
+Automatic USB device address       PASS
+Manual device-address setting      NOT REQUIRED
+Reconnect / different USB ports    PASS in final clean-PC test
 ```
 
-These are development observations, not universal recommendations.
-Current Egret2MAME default: **Trackball 3x**.
+------------------------------------------------------------------------
 
-## 14. Spinner investigation
+## 12. Direct input core milestone
 
-The purple spinner is byte five of the raw report. Positive movement
-produced values such as `01 02 03`; the opposite direction produced
-`FF FE FD`. It is a signed relative input corresponding to HID Wheel
-usage `0x38`.
+The standalone direct USBPcap test reached a major milestone with the
+v0.10 test core.
 
-Arkanoid became a primary test. Full speed felt too sensitive, so
-scaling was added:
+It automatically performed:
+
+1.  EGRET VID/PID discovery;
+2.  PnP root-hub discovery;
+3.  USBPcap root matching;
+4.  direct USBPcap capture;
+5.  USB device-address detection;
+6.  endpoint/report filtering;
+7.  trackball decoding;
+8.  spinner decoding;
+9.  five-button decoding;
+10. idle-report suppression;
+11. clean capture shutdown.
+
+All physical controls were successfully observed.
+
+``` text
+USBPcap direct reader       PASS
+Trackball raw data          PASS
+Spinner raw data            PASS
+Five button raw data        PASS
+Automatic root selection    PASS
+Automatic address select    PASS
+```
+
+This became the input foundation for Beta 0.815.
+
+------------------------------------------------------------------------
+
+## 13. Button output to MAME
+
+Decoding the buttons was only half of the problem. MAME also had to see
+five distinct, useful controls.
+
+The intended standard keyboard mapping for Beta 0.815 became:
+
+``` text
+SELECT       -> 5
+START        -> 1
+MENU         -> SPACE
+FIRE LEFT    -> LCTRL
+FIRE RIGHT   -> LALT
+```
+
+### 13.1 Scan-code-only SendInput
+
+A scan-code-only `SendInput` experiment did not produce the required
+result.
+
+``` text
+STATUS: FAIL
+```
+
+### 13.2 Virtual-key-only SendInput
+
+Sending normal virtual keys worked in ordinary Windows applications.
+
+However, in MAME the inputs appeared as:
+
+``` text
+Scan000
+```
+
+The important discovery was that MAME could see the injected events, but
+all five appeared with the same unusable scan identity.
+
+``` text
+Windows/editor test       PASS
+MAME distinct buttons     FAIL
+MAME result               Scan000 for all keys
+```
+
+### 13.3 Final SendInput solution
+
+The successful v0.13 output test used both fields:
+
+``` text
+wVk   = desired virtual key
+wScan = MapVirtualKeyW(wVk, MAPVK_VK_TO_VSC)
+```
+
+Crucially, `KEYEVENTF_SCANCODE` is **not** set.
+
+Key release uses `KEYEVENTF_KEYUP`.
+
+This preserved the working virtual-key injection path while also
+providing a meaningful scan value that MAME/DInput could distinguish.
+
+Result:
+
+``` text
+SELECT -> 5              PASS
+START -> 1               PASS
+MENU -> SPACE            PASS
+FIRE LEFT -> LCTRL       PASS
+FIRE RIGHT -> LALT       PASS
+Distinct MAME inputs     PASS
+```
+
+This breakthrough removed the need for `EgretVirtualButtons`, Microsoft
+VHF or a virtual Xbox controller in Beta 0.815.
+
+------------------------------------------------------------------------
+
+## 14. MAME input-provider conclusion
+
+During testing, MAME input configuration temporarily produced
+joystick-like/recentering behavior that initially looked like a
+trackball problem.
+
+The behavior remained even when the Egret test tool was not running,
+proving that the problem was in the MAME configuration rather than the
+new capture core.
+
+Resetting the affected MAME configuration restored normal
+mouse/trackball behavior.
+
+For the Beta 0.815 architecture, the tested useful MAME path is:
+
+``` text
+DInput or Win32
+```
+
+RawInput is not the intended provider for the mouse-multiplication
+method used here.
+
+The public documentation should therefore include a separate MAME
+configuration guide rather than attempting to force one universal MAME
+configuration from Egret2MAME itself.
+
+------------------------------------------------------------------------
+
+## 15. Trackball output and speed multiplication
+
+The physical EGRET trackball remains visible to Windows as native
+relative mouse movement.
+
+Egret2MAME therefore does not need to replace the base mouse movement.
+Instead, higher speed settings add extra relative movement based on the
+raw EGRET delta:
+
+``` text
+extra X = (speed - 1) * raw X
+extra Y = (speed - 1) * raw Y
+```
+
+The native physical movement plus the injected extra movement produces
+the effective multiplier.
+
+Beta 0.815 provides trackball speed settings:
+
+``` text
+1x
+2x
+3x
+4x
+5x
+6x
+```
+
+Default:
+
+``` text
+3x
+```
+
+Result:
+
+``` text
+Native trackball movement       PASS
+Trackball multiplication        PASS
+MAME operation                  PASS
+```
+
+Game-specific maximum movement speed remains controlled by the game
+itself; reaching Centipede's maximum shooter speed is not an Egret2MAME
+defect.
+
+------------------------------------------------------------------------
+
+## 16. Spinner output and scaling
+
+The physical spinner is exposed through the Windows mouse-wheel path.
+
+Beta 0.815 retains the established correction method for spinner speeds
+below the native 1.0 rate.
+
+Available settings:
 
 ``` text
 0.25x
@@ -241,268 +597,694 @@ scaling was added:
 1.00x
 ```
 
-`0.50x` and `0.75x` felt considerably more plausible during testing.
-Current default: **Spinner 0.50x**.
-
-## 15. Attempt #7 -- Building our own Windows driver
-
-We investigated removing external capture/remapping dependencies with a
-KMDF driver using Microsoft's Virtual HID Framework (VHF):
+Default:
 
 ``` text
-Physical EGRET -> our driver/reader -> Egret2MAME -> virtual HID -> MAME
+0.50x
 ```
 
-The driver project compiled, but Windows driver security and Secure Boot
-made deployment a much larger problem. A public custom driver needs a
-proper production-signing/distribution strategy.
+The application maintains an accumulator and injects compensating
+opposite wheel movement where required so that the effective output is
+reduced relative to the physical 1.0x input.
 
-The route was **not technically abandoned**; it was postponed because of
-installation and signing complexity.
+Result:
 
-## 16. Why USBPcap remained during development
-
-USBPcap already provided reliable access to the raw traffic while
-Windows continued to use the physical controller. It therefore remained
-the practical development backend.
-
-The next usability objective was automatic discovery.
-
-## 17. Egret2MAME v0.28 -- Automatic controller detection
-
-v0.28 scans `USBPcap1` through `USBPcap12` and discovers the appropriate
-device/endpoint automatically, so moving the controller to another USB
-port does not require manually editing capture settings.
-
-The detection is not tied to one individual controller serial number.
-Another controller of the same supported model should therefore be
-discoverable through the same device/report characteristics.
-
-## 18. Administrator privilege problem
-
-One GUI build accidentally lost elevation in its startup script and
-showed `Reports: 0` / controller not found. The decoder was fine;
-USBPcap lacked the required privileges. Restoring elevation fixed it.
-
-This is exactly the sort of failed detail worth documenting: it can save
-another developer hours of debugging the wrong component.
-
-## 19. GUI development
-
-**v0.29:** first proper GUI.
-
-**v0.30:** added a controller image and live visualization. An early
-build hit a `NullReferenceException` because of obsolete GUI references.
-
-**v0.30a:** fixed the crash and restored live visualization.
-
-## 20. v0.31 -- Polishing the controller display
-
-Live visualization was added for Select, Start, Menu, Fire Left, Fire
-Right, Trackball and Spinner.
-
-The five button overlays initially did not align perfectly with the
-image, so a Button Alignment system was added for pixel nudging and the
-corrected positions were later baked into the program.
-
-## 21. v0.31e -- Button alignment
-
-All five live button indicators were aligned with their physical
-positions without altering the known-good input backend.
-
-A useful development rule emerged:
-
-> Do not break working controller input just to improve the GUI.
-
-## 22. v0.31f -- Trackball Live Scope
-
-The small live indicator on the yellow trackball was retained, while the
-previously unused Trackball panel became a larger X/Y direction/scope
-display.
-
-At this point the development build has working USB auto-detection,
-five-button decoding, virtual X360 button bridging, trackball and
-spinner handling/scaling, and live GUI visualization.
-
-## 23. Clean-PC goal
-
-The current prototype proves the concept, but USBPcap and ViGEmBus are
-still development/runtime dependencies.
-
-The public-release target is:
-
-> **Fresh Windows 11 + original controller -\> start Egret2MAME -\>
-> start MAME -\> play.**
-
-Ideally users should not need to hunt down drivers, install analysis
-software, understand USB capture devices or manually edit technical
-configuration.
-
-Several additional PCs and a notebook are planned as clean-system test
-machines before a public 1.0.
+``` text
+Spinner input          PASS
+Spinner scaling        PASS
+MAME operation         PASS
+```
 
 ------------------------------------------------------------------------
 
-# Current development architecture
+## 17. Beta 0.815 GUI
+
+The working direct-input/output core was merged with the proven visual
+design of the earlier Egret2MAME GUI.
+
+The final Beta 0.815 interface retains:
+
+-   controller illustration;
+-   live controller activity display;
+-   five aligned live button indicators;
+-   trackball live display/scope;
+-   trackball speed selector;
+-   spinner speed selector;
+-   MAME provider information;
+-   Save Settings;
+-   About;
+-   fixed MAME button-mapping reference.
+
+The final mapping shown in the GUI is:
 
 ``` text
-             TAITO EGRET II mini
-          Paddle & Trackball Controller
-                       |
-                       | USB
-                       v
-                Windows HID stack
-                       |
-              +--------+--------+
-              |                 |
-              v                 v
-        Normal Windows       USBPcap
-          mouse path            |
-                                v
-                           Egret2MAME
-                                |
-                 +--------------+--------------+
-                 |                             |
-                 v                             v
-          Trackball/Spinner             Five Buttons
-           mouse handling                    |
-                                             v
-                                      ViGEm virtual
-                                     Xbox 360 controller
-                                             |
-                 +--------------+--------------+
-                                v
-                               MAME
+MAME BUTTON MAPPING
+
+SELECT      5
+START       1
+MENU        SPACE
+FIRE (L)    LCTRL
+FIRE (R)    LALT
 ```
 
-This is the development architecture, not a promise that the same
-dependencies will remain in the final public release.
+During cleanup, development-only UI elements no longer needed by the
+release candidate were removed, including the visible report counter and
+the old button-alignment controls.
 
-# Things that did NOT work
+The MAME provider area was reduced to fit the final layout.
 
-  -----------------------------------------------------------------------
-  Approach                Result                  Why
-  ----------------------- ----------------------- -----------------------
-  Direct HID reading      Failed                  Windows owns the mouse
-                                                  HID collection
+Result:
 
-  Keyboard SendInput +    Failed for our goal     Injected input is not
-  MAME RawInput                                   equivalent to normal
-                                                  RawInput
-
-  Trackball -\> X360      Rejected                Relative movement does
-  stick                                           not map naturally to an
-                                                  absolute joystick axis
-
-  Mouse multiplication +  Limited/unsuitable      RawInput follows a
-  RawInput                                        different input path
-
-  Mouse multiplication +  Worked in testing       MAME receives generated
-  DInput/Win32                                    relative movement
-                                                  through these paths
-
-  ViGEm virtual           Worked                  MAME recognizes the
-  controller for buttons                          virtual X360 controller
-
-  USBPcap raw capture     Worked                  Gives access to the raw
-                                                  five-byte reports
-
-  Custom KMDF/VHF driver  Experimental            Technically promising;
-                                                  signing/deployment
-                                                  remains a major issue
-  -----------------------------------------------------------------------
-
-A failed experiment is not wasted work if it prevents the next developer
-from spending a night discovering the same limitation.
-
-# Third-party components and research
-
-Egret2MAME was developed specifically for this project, but it does
-**not** exist in isolation.
-
-Development benefited from or currently uses:
-
--   **USBPcap** -- raw USB capture during development/current prototype.
--   **ViGEmBus / Nefarius.ViGEm.Client** -- virtual Xbox 360 controller
-    for the current button bridge.
--   **Microsoft Windows APIs / KMDF / VHF** -- input handling and
-    experimental driver work.
--   **Community HID research** -- useful early clues about unusual
-    controller usages, subsequently tested against the physical
-    controller and raw reports.
-
-Before public distribution, all third-party licenses, notices,
-redistribution requirements and credits must be reviewed. Controller
-artwork used during development must also be reviewed; a neutral
-original illustration may replace it if necessary.
-
-# Project philosophy
-
-Egret2MAME is intended to remain free.
-
-The goal is not to replace MAME's input system. The goal is to make this
-unusual but excellent original controller behave on a Windows MAME
-system as naturally as its owner expected when buying it.
-
-This project started because I bought a controller and waited for
-somebody to make it work.
-
-Eventually the answer seemed to be:
-
-> **It can't be done.**
-
-So we started investigating.
-
-A few HID reports, USB captures, failed experiments and many test builds
-later, the answer became:
-
-> **Apparently it can.**
-
-And perhaps the finished project can save the next EGRET owner from
-having to start at byte zero.
+``` text
+Controller graphic          PASS
+Live controller display     PASS
+Five live button lights     PASS
+Trackball display           PASS
+Speed controls              PASS
+Mapping reference           PASS
+Final layout                PASS
+```
 
 ------------------------------------------------------------------------
 
-## 24 September 2026 — v0.35 DEV installer: uninstall validation and test-mode-off check
+## 18. Preventing the GUI from reacting to injected controller keys
 
-### Tested environment and scope
+An integration issue appeared after keyboard button output was added.
 
-This section records observations on the development Windows 11 PC, **not** a successful test on a fresh third-party PC. The final candidate is still a development/test-signed build, not a portable consumer release. The `README_FINAL_CANDIDATE.txt` included in the original source snapshot predates the completed tests and describes the uninstall as untested; the observations below supersede that historical status statement.
+The physical MENU button maps to `SPACE`. If a normal GUI button such as
+About held keyboard focus, the injected Space event could activate that
+GUI button.
 
-### Uninstall guard and rollback
+Likewise, old numeric GUI hotkeys were undesirable because SELECT and
+START intentionally generate `5` and `1`.
 
-The installed Inno Setup uninstaller invokes `09_Uninstall_Guard.ps1`. Its guard calls the native `EgretPhysicalRollback.exe --uninstall-all`, verifies physical EGRET instances have returned to Microsoft's `input.inf`, removes the virtual device, and blocks uninstallation if these checks fail. It deliberately does not delete OEM driver packages from the DriverStore.
+The GUI was therefore adjusted so that its buttons do not retain normal
+tab focus in a way that allows controller-generated keyboard events to
+activate the application itself. Obsolete speed hotkey behavior was also
+removed/neutralized for the final workflow.
 
-During testing, the first guard attempt could not locate `pnputil.exe` from 32-bit PowerShell. Using `System32` alone was also insufficient because of WOW64 redirection. The guard was updated to resolve `Sysnative\pnputil.exe` when running as a 32-bit process on 64-bit Windows. After rebuilding and reinstalling the candidate, the uninstaller displayed its successful-removal message.
+Result:
 
-A separate **read-only** post-uninstall check reported:
-
-```text
-PHYSICAL USB\VID_0AE4&PID_0701\C&7596C39&0&1 | INF=input.inf | provider=Microsoft | present=yes
-PHYSICAL USB\VID_0AE4&PID_0701\C&7596C39&0&2 | INF=input.inf | provider=Microsoft | present=no
-PREVIEW ONLY: 2 EGRET instances. No changes made.
+``` text
+MENU activates About accidentally     FIXED
+Controller keys alter own GUI         FIXED
+Five buttons in MAME                  PASS
 ```
 
-The command querying `Get-PnpDevice` for `ROOT\HIDCLASS\*` returned no entries. Thus, on this development machine, the physical devices were back on the Microsoft INF and the queried virtual ROOT/HIDCLASS device was absent after uninstall. The OEM packages may still remain staged in DriverStore by design.
+------------------------------------------------------------------------
 
-### Reinstall attempt with Windows test signing disabled
+## 19. Settings persistence
 
-After disabling Windows test signing and uninstalling the prior installation, the developer started the same v0.35 DEV setup again. The application window opened, but the controller path did **not** work. The screenshot showed:
+Beta 0.815 stores the user's speed settings in:
 
-- `Waiting for EgretFilter...` and `Driver: \\.\EgretFilter`;
-- LIVE panel: `Virtual Controller Active`, `Input Driver Microsoft VHF`, `Input Backend EgretFilter`, `Reports: 0`;
-- error dialog: `Microsoft VHF controller could not be started.` / `Das System kann die angegebene Datei nicht finden`.
+``` text
+%LOCALAPPDATA%\Egret2MAME\settings.ini
+```
 
-The `Active` status is not proof of a functioning virtual controller: it contradicts the explicit start error and zero reports. The screenshot alone does not establish which individual driver-installation step failed or the exact underlying cause. Test-signed kernel drivers are not a supported normal-mode distribution path. The application opening must not be described as successful end-to-end installation.
+Stored values:
 
-**Result:** v0.35 installer/uninstaller was validated on the configured development PC with test signing; a subsequent test with test signing off showed that the application opens but the driver/controller chain fails. No successful fresh-PC or Secure-Boot-on test has been recorded.
+``` text
+TrackballSpeed=<1..6>
+SpinnerQuarter=<1..4>
+```
 
-### Remaining work before a public release
+No runtime log file is required for normal use.
 
-1. Replace the first-install WDK/DevCon dependency with a supported, self-contained device-installation path.
-2. Arrange appropriate production driver signing and validate loading under normal Windows security settings, including Secure Boot.
-3. Test installation, operation, failure handling, and uninstall on a clean Windows 11 PC; capture driver-install logs and device status.
-4. Fix the GUI's misleading `Virtual Controller Active` indicator when VHF startup fails; report distinct states for installed, started, connected, and receiving reports.
-5. Preserve the validated v0.35 DEV candidate and signed driver backups unchanged while developing the portable release.
+Result:
 
-**Current status:** validated **DEV** candidate on the development machine; **not** a general-purpose release installer.
+``` text
+Save Settings       PASS
+Reload settings     PASS
+```
+
+------------------------------------------------------------------------
+
+## 20. Administrator requirement
+
+During integration testing, direct USBPcap access behaved differently
+depending on process elevation.
+
+Observed:
+
+``` text
+Started elevated / admin     USBPcap access PASS
+Started normally             USBPcap access unavailable
+```
+
+The final application manifest therefore uses:
+
+``` text
+requireAdministrator
+```
+
+Windows displays the normal UAC elevation prompt when Egret2MAME starts.
+
+This is considered acceptable for Beta 0.815 and is substantially
+preferable to requiring Windows Test Mode or disabling Secure Boot.
+
+------------------------------------------------------------------------
+
+## 21. Components no longer required by Beta 0.815
+
+The new architecture eliminates several components from the active
+release path.
+
+Beta 0.815 does **not** require:
+
+``` text
+EgretFilter.sys
+EgretVirtualButtons.sys
+EgretPhysicalInstall.exe
+EgretPhysicalRollback.exe
+EgretVirtualDevice.exe
+Microsoft VHF virtual button device
+ViGEm virtual Xbox output
+Windows Test Signing mode
+Secure Boot disabled
+Egret development test certificate
+Wireshark at runtime
+USBPcapCMD at runtime
+```
+
+The previous v0.4711 Beta 1 DEV package remains preserved separately as
+historical fallback and development evidence.
+
+It must not be confused with the Beta 0.815 release architecture.
+
+------------------------------------------------------------------------
+
+## 22. USBPcap runtime dependency
+
+Beta 0.815 does require USBPcap.
+
+The installer currently packages:
+
+``` text
+USBPcap 1.5.4.0
+```
+
+The development build process verifies the installer with SHA-256:
+
+``` text
+87A7EDF9BBBCF07B5F4373D9A192A6770D2FF3ADD7AA1E276E82E38582CCB622
+```
+
+USBPcap is installed silently by the Egret2MAME setup when it is not
+already present.
+
+A reboot is required after the driver installation before the capture
+path can be used reliably.
+
+From the user's perspective the intended process is:
+
+``` text
+Run Egret2MAME Setup
+        |
+        v
+USBPcap installed automatically if required
+        |
+        v
+Reboot
+        |
+        v
+Run Egret2MAME
+```
+
+The user does not need to separately download or configure USBPcap.
+
+USBPcap licensing/redistribution notices and credits must be included in
+the public release documentation.
+
+------------------------------------------------------------------------
+
+## 23. Installer and release packaging
+
+The Beta 0.815 release installer is built with **Inno Setup 7**.
+
+The public installer packages the x64 Egret2MAME application, the
+required application artwork/resources and the official USBPcap 1.5.4.0
+installer into a single setup package.
+
+The build/release process:
+
+1.  builds the x64 Egret2MAME application;
+2.  embeds the administrator/UAC manifest;
+3.  verifies the bundled USBPcap installer;
+4.  creates the standalone Egret2MAME setup package.
+
+Internal development-machine paths, temporary build locations and local
+working filenames are deliberately not part of the public development
+documentation because they are not relevant to installing, using or
+understanding Egret2MAME.
+
+The final installer creates the normal Egret2MAME installation and
+shortcuts and installs USBPcap only when required.
+
+------------------------------------------------------------------------
+
+## 24. USBPcap ownership problem during uninstall
+
+A release-quality uninstaller must not remove software that was already
+present before Egret2MAME was installed.
+
+The required rule is:
+
+``` text
+USBPcap already existed before Egret2MAME
+    -> leave USBPcap installed
+
+USBPcap was installed by Egret2MAME
+    -> remove USBPcap with Egret2MAME
+```
+
+### 24.1 First ownership implementation --- file marker
+
+The first installer attempted to record ownership using a marker file
+inside the Egret2MAME application directory.
+
+During testing, Egret2MAME itself uninstalled but USBPcap remained
+installed.
+
+Changing the order so that USBPcap was requested for removal before
+Egret2MAME did not solve the problem.
+
+### 24.2 Isolating the USBPcap uninstaller
+
+The USBPcap silent uninstaller was then tested directly from an elevated
+PowerShell:
+
+``` powershell
+& "C:\Program Files\USBPcap\Uninstall.exe" /S
+```
+
+USBPcap disappeared correctly from Windows Installed Apps.
+
+Result:
+
+``` text
+USBPcap silent uninstall itself      PASS
+Egret ownership/uninstall trigger    FAIL
+```
+
+This isolated the problem to Egret2MAME's ownership tracking rather than
+USBPcap.
+
+### 24.3 Final solution --- registry ownership
+
+The application-directory marker was removed.
+
+The installer now records ownership persistently in:
+
+``` text
+HKLM\SOFTWARE\Egret2MAME
+```
+
+with:
+
+``` text
+USBPcapOwned = 1
+```
+
+but **only when USBPcap was absent before Egret2MAME Setup began**.
+
+On uninstall:
+
+1.  the ownership value is read;
+2.  if `USBPcapOwned=1`, the USBPcap silent uninstaller is executed
+    first;
+3.  Egret2MAME waits for that operation;
+4.  the ownership value is removed;
+5.  the normal Egret2MAME uninstall continues.
+
+If USBPcap was present before installation, Egret2MAME does not claim
+ownership and does not remove it.
+
+Final result:
+
+``` text
+Install USBPcap automatically             PASS
+Remember USBPcap ownership                PASS
+Preserve pre-existing USBPcap             BY DESIGN
+Remove Egret-installed USBPcap            PASS
+Remove Egret2MAME                          PASS
+Clean uninstall                            PASS
+```
+
+------------------------------------------------------------------------
+
+## 25. Final clean-PC validation
+
+After development-machine testing was complete, Beta 0.815 was tested on
+another Windows PC as the release validation target.
+
+Important conditions:
+
+``` text
+Windows 11
+Secure Boot ON
+Test Signing OFF
+No requirement for custom Egret test drivers
+```
+
+The installer completed successfully.
+
+After the required reboot, Egret2MAME ran correctly.
+
+The controller was also tested on **multiple USB ports**. Automatic
+discovery continued to work; no USBPcap device number or USB address had
+to be configured manually.
+
+The uninstaller was then tested and successfully removed the Egret2MAME
+installation and the USBPcap installation owned by Egret2MAME.
+
+This closes the principal release blocker that existed in the previous
+development branch.
+
+------------------------------------------------------------------------
+
+## 26. MAME scope
+
+The reference emulator for this project remains:
+
+``` text
+Official standalone MAME 0.289 for Windows
+```
+
+Beta 0.815 has been designed around the normal MAME Windows input path,
+with DInput/Win32 being the intended provider path for the mouse
+multiplication behavior.
+
+Individual MAME games still require appropriate control assignment and
+may have their own analog sensitivity/speed behavior.
+
+A separate MAME setup guide should document the recommended clean
+configuration and mappings.
+
+Other MAME versions, frontends or RetroArch may work, but they are not
+automatically part of the Beta 0.815 compatibility guarantee unless
+separately tested.
+
+------------------------------------------------------------------------
+
+## 27. Final Beta 0.815 button mapping
+
+``` text
+EGRET CONTROL     MAME/KEYBOARD OUTPUT
+
+Pink SELECT       5
+Blue START        1
+White MENU        SPACE
+FIRE LEFT         Left Ctrl
+FIRE RIGHT        Left Alt
+```
+
+Trackball and spinner remain relative pointing-device controls rather
+than joystick axes.
+
+------------------------------------------------------------------------
+
+## 28. Final security/deployment result
+
+The most important release objective of this development cycle was
+achieved.
+
+Beta 0.815 no longer asks the user to weaken normal Windows
+driver-security settings for Egret2MAME's own code.
+
+Final state:
+
+``` text
+Secure Boot                         SUPPORTED / NOT REQUIRED
+Windows Test Signing               OFF
+Custom Egret kernel driver         NOT USED
+Custom Egret driver signing        NOT REQUIRED
+Development certificate            NOT REQUIRED
+Official signed USBPcap driver      USED
+UAC elevation for Egret2MAME        REQUIRED
+```
+
+This is the architecture intended for public distribution.
+
+------------------------------------------------------------------------
+
+## 29. Development conclusions
+
+The Beta 0.815 cycle resolved three separate problems that had
+previously been coupled together:
+
+### Input acquisition
+
+Direct HID could not read the Windows-owned mouse collection, and Raw
+Input did not expose the five buttons in the required form.
+
+Direct USBPcap access solved raw input acquisition.
+
+### Button output
+
+Virtual HID/VHF and virtual-controller approaches were no longer
+necessary after the successful `SendInput` combination of a normal
+virtual key plus a real mapped scan value.
+
+### Deployment
+
+Removing the project's own kernel drivers eliminated the
+production-signing obstacle. Bundling the already signed USBPcap
+component provided a practical normal-Windows installation path.
+
+The resulting release architecture is smaller and easier to deploy than
+the previous development-driver branch.
+
+------------------------------------------------------------------------
+
+## 30. Known limitations / intentional design choices
+
+Beta 0.815 intentionally has the following characteristics:
+
+-   Egret2MAME requests administrator elevation because direct USBPcap
+    access requires it in the tested environment.
+-   USBPcap 1.5.4.0 is a runtime dependency.
+-   A reboot is required after USBPcap installation.
+-   The USB device-address detector is a targeted heuristic operating
+    after the correct physical USB root has already been identified.
+-   Trackball speed multiplication is intended for MAME DInput/Win32
+    rather than RawInput.
+-   MAME game configuration remains game/user specific.
+-   Beta 0.815 targets the TAITO controller with VID `0AE4`, PID `0701`;
+    it is not intended as a generic USB controller translator.
+
+None of these items blocked the completed clean-PC validation.
+
+------------------------------------------------------------------------
+
+## 31. Third-party components, credits and acknowledgements
+
+Egret2MAME is an independent community project. It is not developed,
+endorsed, sponsored or supported by TAITO.
+
+The project relies on, was built with, or benefited from the following
+third-party software and platform technologies.
+
+### USBPcap --- runtime component
+
+**USBPcap** is the principal third-party runtime component used by Beta
+0.815.
+
+USBPcap is developed by **Tomasz Moń** and contributors and provides the
+Windows USB packet-capture driver that makes the Beta 0.815 direct input
+architecture possible.
+
+Egret2MAME distributes the official USBPcap 1.5.4.0 installer rather
+than a modified Egret-specific build.
+
+The USBPcap project documents its licensing as:
+
+``` text
+USBPcapDriver   GPLv2
+USBPcapCMD      BSD 2-Clause
+```
+
+Beta 0.815 depends on the USBPcap capture driver. Egret2MAME does not
+require USBPcapCMD or Wireshark at runtime.
+
+The public release package must retain/provide the applicable USBPcap
+license and copyright notices in accordance with the USBPcap
+distribution terms.
+
+Project: https://github.com/desowin/usbpcap
+
+### Inno Setup --- build/installer tool
+
+The Egret2MAME Windows setup package is produced with **Inno Setup 7**,
+the Windows installation builder by **Jordan Russell and Martijn Laan**.
+
+Inno Setup is a build-time tool. End users do not need to install Inno
+Setup in order to use Egret2MAME.
+
+Project: https://jrsoftware.org/isinfo.php
+
+### Microsoft Windows / .NET Framework / Windows Forms
+
+Egret2MAME Beta 0.815 is a Windows desktop application built using
+Microsoft Windows APIs and the Microsoft .NET Framework / Windows Forms
+platform.
+
+Windows 11 includes a supported .NET Framework 4.x runtime, so the
+current Egret2MAME package does not need to present .NET Framework as a
+separate bundled third-party application.
+
+Microsoft, Windows, .NET and related names are trademarks of Microsoft
+Corporation. Their mention describes the platform used by Egret2MAME and
+does not imply Microsoft endorsement.
+
+### Wireshark --- development/research tool only
+
+**Wireshark** was used during development while investigating and
+validating USB traffic.
+
+Wireshark is **not** a Beta 0.815 runtime dependency and is not required
+to install or use Egret2MAME.
+
+### USBPcapCMD --- development/reference tool only
+
+USBPcap's command-line capture utility was useful during the earlier
+investigation of the controller and USBPcap capture format.
+
+The finished Beta 0.815 application communicates with the USBPcap
+capture devices directly and therefore does not require USBPcapCMD at
+runtime.
+
+### MAME --- target emulator, not bundled
+
+Egret2MAME was developed and tested primarily for the official
+standalone Windows build of **MAME 0.289**.
+
+MAME is not included in the Egret2MAME package. Egret2MAME is an
+independent compatibility utility and is not an official MAME project.
+
+### TAITO / EGRET II mini
+
+The hardware target is the **TAITO EGRET II mini Paddle & Trackball
+Controller**.
+
+TAITO and EGRET II mini are referenced only to identify compatible
+hardware. Egret2MAME is an unofficial independent project and is not
+affiliated with or endorsed by TAITO Corporation.
+
+### Development assistance
+
+Development, investigation, debugging, documentation and iterative code
+work were carried out by the Egret2MAME project with assistance from
+**OpenAI ChatGPT**.
+
+The final human project/release credit wording can be adjusted before
+publication.
+
+### Runtime dependency summary
+
+``` text
+COMPONENT                    BETA 0.815 STATUS
+
+USBPcap Driver               REQUIRED / bundled installer
+USBPcapCMD                   NOT REQUIRED
+Wireshark                    NOT REQUIRED
+Inno Setup                   BUILD TOOL ONLY
+.NET Framework / WinForms    WINDOWS PLATFORM
+MAME                         TARGET APPLICATION / NOT BUNDLED
+Egret custom kernel drivers  NOT USED
+ViGEm                        NOT USED
+Microsoft VHF                NOT USED
+```
+
+------------------------------------------------------------------------
+
+## 32. Release freeze
+
+The Beta 0.815 executable and installer have now passed the intended
+technical validation.
+
+From this checkpoint onward, the working program/installer should be
+treated as frozen unless a reproducible defect is found.
+
+Remaining pre-publication work is documentation/release work:
+
+``` text
+Release notes                         TODO
+Credits                               TODO
+USBPcap license/redistribution text   TODO (include with release)
+Final DEVELOPMENT.md review           IN PROGRESS
+MAME setup guide                      TODO
+Final release hashes                  TODO
+Archive/freeze final package          TODO
+```
+
+No functional rewrite is planned before publication.
+
+------------------------------------------------------------------------
+
+## Current status at end of 5 October 2026
+
+``` text
+USBPcap direct access                     PASS
+Automatic EGRET VID/PID discovery         PASS
+Automatic USB root discovery              PASS
+Automatic USBPcap root mapping            PASS
+Automatic USB device-address detection    PASS
+
+Raw 5-byte EGRET report decode            PASS
+Trackball decode                          PASS
+Spinner decode                            PASS
+SELECT decode                             PASS
+START decode                              PASS
+MENU decode                               PASS
+FIRE LEFT decode                          PASS
+FIRE RIGHT decode                         PASS
+
+Trackball output/scaling                  PASS
+Spinner output/scaling                    PASS
+Five distinct keyboard outputs            PASS
+MAME DInput/Win32 button distinction      PASS
+
+SELECT -> 5                               PASS
+START -> 1                                PASS
+MENU -> SPACE                             PASS
+FIRE LEFT -> LCTRL                        PASS
+FIRE RIGHT -> LALT                        PASS
+
+Controller GUI                            PASS
+Live controller display                   PASS
+Live button indicators                    PASS
+Settings persistence                      PASS
+GUI self-trigger prevention               PASS
+
+Administrator/UAC startup                 PASS
+Secure Boot ON operation                  PASS
+Secure Boot required                      NO
+Test Signing OFF operation                PASS
+Custom Egret kernel drivers eliminated    PASS
+
+One-click installer                       PASS
+Automatic USBPcap installation            PASS
+Required reboot flow                      PASS
+USBPcap ownership tracking                PASS
+Egret2MAME uninstall                      PASS
+Owned USBPcap uninstall                   PASS
+
+Second Windows 11 PC installation         PASS
+Multiple USB-port test                    PASS
+Second-PC runtime test                    PASS
+Second-PC uninstall test                  PASS
+
+Beta 0.815 technical release candidate    PASS
+
+Release notes                             TODO
+Credits / third-party notices             DRAFTED
+USBPcap license identified (Driver GPLv2)  PASS
+MAME configuration guide                  TODO
+Final release hashes/package freeze       TODO
+```
+
+**Checkpoint:** Beta 0.815 has completed the technical development
+cycle. The new release path works on normal Windows 11 without the
+project's former test-signed kernel drivers. Preserve the working
+application and installer unchanged while completing documentation,
+credits, licensing and release packaging.
