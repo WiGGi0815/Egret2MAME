@@ -1,6 +1,6 @@
 # Egret2MAME --- DEVELOPMENT.md
 
-> **CURRENT DEVELOPMENT CHECKPOINT --- 5 October 2026**
+> **CURRENT DEVELOPMENT CHECKPOINT --- 7 October 2026**
 >
 > **Version:** Beta 0.815\
 > **Status:** TECHNICALLY COMPLETE / RELEASE CANDIDATE\
@@ -17,8 +17,10 @@
 >
 > **Freeze rule:** The working Beta 0.815 program and installer should
 > not be changed for the public release unless a concrete defect is
-> found. Remaining work is documentation, credits/licensing, release
-> notes and final packaging.
+> found. The application/installer is functionally frozen. Documentation
+> has now been expanded with freshly verified MAME 0.289 spinner and
+> trackball setup examples. Remaining release work is
+> licensing/compliance review and final packaging.
 
 ------------------------------------------------------------------------
 
@@ -1288,3 +1290,89 @@ cycle. The new release path works on normal Windows 11 without the
 project's former test-signed kernel drivers. Preserve the working
 application and installer unchanged while completing documentation,
 credits, licensing and release packaging.
+
+------------------------------------------------------------------------
+
+## Current status at end of 7 October 2026
+
+Beta 0.815 remains functionally frozen. No input/backend architecture
+changes were required during the final documentation pass.
+
+### Final application defaults
+
+``` text
+Trackball speed default             3x
+Spinner speed default               0.50x
+Saved settings                      Override defaults
+SELECT                              5
+START                               1
+MENU                                SPACE
+FIRE (L)                            LCTRL
+FIRE (R)                            LALT
+```
+
+### GUI / release presentation
+
+``` text
+Compact GUI at Windows 150% scale   PASS
+Save / Notices / About / Exit       PASS
+Author display "by WiGGi"           PASS
+Controller artwork                  PASS
+No-CIBO joystick artwork            PASS
+```
+
+### MAME 0.289 reference setup
+
+The public `MAME_SETUP.md` now contains illustrated, freshly tested
+reference configurations for:
+
+-   **Arkanoid (World, older)** --- spinner/dial
+-   **Centipede (revision 4)** --- trackball
+
+Arkanoid was verified with `Dial Device Assignment = mouse`,
+`Keyboard Input Provider = dinput`, and `Dial Analog = Mouse Scroll V`.
+
+Centipede was verified with `Trackball Device Assignment = mouse`,
+`Keyboard Input Provider = dinput`, `Mouse Input Provider = dinput`,
+`Trackball X Analog = Mouse X-Axis`, and
+`Trackball Y Analog = Mouse Y-Axis`.
+
+The documented analog values are recommendations only. Users may adjust
+sensitivity, reverse and increment/decrement speed to suit the game and
+personal preference. The same basic configuration method should also
+work with other MAME spinner/dial and trackball games.
+
+### PASS / FAIL / TODO
+
+``` text
+Beta 0.815 application              PASS
+USBPcap direct input                PASS
+Automatic controller detection      PASS
+Automatic USBPcap root matching     PASS
+Automatic USB address detection     PASS
+Trackball                           PASS
+Spinner                             PASS
+Five physical buttons               PASS
+Keyboard output for MAME            PASS
+Settings persistence                PASS
+Windows 150% GUI scaling            PASS
+One-click installer                 PASS
+Clean Windows 11 installation       PASS
+Secure Boot ON                      PASS
+Test Signing OFF                    PASS
+Multiple USB ports                  PASS
+Ownership-aware uninstall           PASS
+Arkanoid spinner setup / MAME .289  PASS
+Centipede trackball / MAME .289     PASS
+Illustrated MAME_SETUP.md           PASS
+
+Concrete functional defect           NONE KNOWN
+
+Third-party license package          TODO
+Final own-project LICENSE choice     TODO
+Final public source cleanup          TODO
+Release hashes / package freeze      TODO
+```
+
+**Freeze rule remains in effect:** do not change the working Beta 0.815
+program or installer unless a concrete defect is found.
