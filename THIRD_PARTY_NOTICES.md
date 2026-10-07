@@ -22,9 +22,13 @@ The upstream USBPcap project states:
 Egret2MAME requires the USBPcap driver at runtime. It does **not**
 require USBPcapCMD or Wireshark at runtime.
 
-The applicable upstream USBPcap copyright and license material must be
-retained/provided as required when redistributing the USBPcap
-installer/driver.
+For Beta 0.815, the repository's `licenses/` area contains the complete
+corresponding upstream USBPcap **1.5.4.0** source archive together with a
+USBPcap redistribution/source notice. The source archive is the source
+corresponding to the USBPcap version bundled by the Egret2MAME installer.
+
+The USBPcap material remains third-party software. Egret2MAME does not
+claim ownership of USBPcap.
 
 ## Inno Setup
 
@@ -91,11 +95,15 @@ with or endorsed by TAITO Corporation.
   ViGEm                         Not used
   Microsoft VHF                 Not used
 
-## Release note
+## Release package note
 
-Before publishing the binary release, the applicable original
-license/copyright files for redistributed third-party binaries ---
-particularly USBPcap --- should be included with the release.
+Beta 0.815 redistributes the official USBPcap 1.5.4.0 runtime installer
+unchanged. The corresponding upstream USBPcap 1.5.4.0 source archive and
+an explanatory notice are provided under `licenses/`.
 
-This notice is an attribution summary and does not replace the original
-third-party license texts.
+The initial Beta 0.815 release does **not** publish the Egret2MAME
+application source code. USBPcap remains a separate third-party runtime
+component.
+
+This notice is an attribution summary and does not replace the applicable
+upstream license terms.

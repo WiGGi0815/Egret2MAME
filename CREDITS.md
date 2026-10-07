@@ -23,7 +23,8 @@ debugging, documentation and release preparation.
 
 **Tomasz Moń and USBPcap contributors**\
 USBPcap provides the Windows USB capture driver used by Egret2MAME Beta
-0.815.
+0.815. The release repository includes the corresponding USBPcap 1.5.4.0
+upstream source package and redistribution notice under `licenses/`.
 
 **Jordan Russell and Martijn Laan**\
 Inno Setup is used to build the Windows installer.

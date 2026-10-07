@@ -19,8 +19,11 @@
 > not be changed for the public release unless a concrete defect is
 > found. The application/installer is functionally frozen. Documentation
 > has now been expanded with freshly verified MAME 0.289 spinner and
-> trackball setup examples. Remaining release work is
-> licensing/compliance review and final packaging.
+> trackball setup examples. > Release packaging now includes the corresponding USBPcap 1.5.4.0
+> upstream source archive and redistribution notice under `licenses/`.
+> The final compact GUI has also passed UHD / 250% Windows scaling.
+> Remaining administrative release work is the final release hash/package
+> freeze and any final license-text review before public visibility.
 
 ------------------------------------------------------------------------
 
@@ -1368,11 +1371,48 @@ Illustrated MAME_SETUP.md           PASS
 
 Concrete functional defect           NONE KNOWN
 
-Third-party license package          TODO
-Final own-project LICENSE choice     TODO
-Final public source cleanup          TODO
+Third-party source/compliance package PASS (USBPcap 1.5.4.0 source + notice)
+Own-project LICENSE                   DEFERRED (Egret2MAME source not released)
+Public Egret2MAME source cleanup      N/A for initial binary-only Beta
 Release hashes / package freeze      TODO
 ```
 
 **Freeze rule remains in effect:** do not change the working Beta 0.815
 program or installer unless a concrete defect is found.
+
+
+------------------------------------------------------------------------
+
+## Current status at end of 7 October 2026
+
+``` text
+Beta 0.815 application                PASS
+One-click installer                   PASS
+Clean Windows 11 installation         PASS
+Secure Boot enabled                   PASS
+Windows Test Signing disabled         PASS
+Controller detection                  PASS
+Multiple USB ports                    PASS
+Trackball                             PASS
+Spinner                               PASS
+Five buttons                          PASS
+Saved settings                        PASS
+Uninstallation                        PASS
+MAME 0.289 Arkanoid setup             PASS
+MAME 0.289 Centipede setup            PASS
+Windows 150% GUI scaling              PASS
+UHD / Windows 250% GUI scaling        PASS
+Concrete functional defect            NONE KNOWN
+
+USBPcap 1.5.4.0 source package        PREPARED
+USBPcap redistribution notice         PREPARED
+Egret2MAME source release             NOT PLANNED FOR INITIAL BETA
+Own-project open-source LICENSE        DEFERRED
+Final release SHA-256 / package freeze TODO
+```
+
+**Checkpoint:** Beta 0.815 is functionally frozen. The compact 75% GUI
+layout has passed the UHD / 250% scaling test. The repository release
+material now includes the corresponding USBPcap 1.5.4.0 upstream source
+archive and redistribution notice under `licenses/`. Do not modify the
+working application/installer unless a concrete defect is found.

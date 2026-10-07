@@ -118,6 +118,8 @@ component.
 
 See `THIRD_PARTY_NOTICES.md` for credits and licensing information.
 
+The repository also contains the USBPcap 1.5.4.0 compliance/source package under `licenses/`. It includes the complete corresponding upstream USBPcap 1.5.4.0 source archive used for this release and an accompanying notice. Egret2MAME's own source code is not part of the initial Beta 0.815 binary release.
+
 ## Development history
 
 The project went through several approaches before reaching Beta 0.815,
@@ -146,6 +148,8 @@ Beta 0.815 has been tested on a clean Windows 11 PC with:
 -   Test Signing disabled: PASS
 -   MAME 0.289 Arkanoid spinner setup: PASS
 -   MAME 0.289 Centipede trackball setup: PASS
+-   Windows 150% GUI scaling: PASS
+-   UHD / Windows 250% GUI scaling: PASS
 
 ## Credits
 

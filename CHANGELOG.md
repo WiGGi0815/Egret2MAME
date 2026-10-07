@@ -24,6 +24,7 @@
 -   Live controller/button/movement display.
 -   Persistent speed settings.
 -   Compact GUI validated with Windows 150% display scaling.
+-   Final compact 75% GUI layout validated on UHD with Windows 250% display scaling.
 -   `by WiGGi` author credit in the application.
 -   Notices/About information in the application.
 -   Windows installer with automatic USBPcap installation when required.
@@ -70,7 +71,7 @@ uninstallation.
 Secure Boot is supported but not required. Windows Test Signing is not
 required.
 
-The final GUI layout was also validated at 150% Windows display scaling.
+The final compact GUI layout was validated at both 150% Windows display scaling and on a UHD system at 250% scaling, including visibility of the bottom Save / Notices / About / Exit controls.
 
 Arkanoid spinner and Centipede trackball configuration were freshly
 verified in official standalone MAME 0.289.
@@ -78,3 +79,10 @@ verified in official standalone MAME 0.289.
 ### Reference target
 
 Official standalone **MAME 0.289 for Windows**.
+
+### Release / compliance packaging
+
+- USBPcap runtime version fixed at **1.5.4.0**.
+- Complete corresponding upstream USBPcap 1.5.4.0 source archive prepared under `licenses/`.
+- USBPcap notice/source information prepared for redistribution.
+- Initial Beta 0.815 is a binary release; Egret2MAME's own source code is not published with this release.
