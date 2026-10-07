@@ -1,5 +1,7 @@
 # MAME Setup Guide
 
+Official MAME releases: https://www.mamedev.org/release.html
+
 This guide describes the recommended MAME configuration for **Egret2MAME Beta 0.815** and the **TAITO EGRET II mini Paddle & Trackball Controller**.
 
 ## Reference version
