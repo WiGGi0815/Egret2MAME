@@ -35,7 +35,7 @@ Egret2MAME Beta 0.815 provides the five controller buttons to MAME as keyboard i
 
 1. Start MAME.
 2. Select **Arkanoid (World, older)**.
-3. Double-click the game to open **System Settings**.
+3. Double-click **System Settings**.
 4. Open **Input Device Options**.
 5. Set the following options:
 
@@ -111,7 +111,7 @@ You can use either button or assign **both as alternatives** for P1 Button 1.
 
 1. Start MAME.
 2. Select **Centipede (revision 4)**.
-3. Double-click the game to open **System Settings**.
+3. Double-click **System Settings**.
 4. Open **Input Device Options**.
 5. Set the following options:
 
