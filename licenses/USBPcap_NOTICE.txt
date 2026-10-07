@@ -1,0 +1,23 @@
+USBPcap 1.5.4.0 – Source and License Information
+
+Egret2MAME redistributes the official USBPcap runtime as a separate third-party component.
+
+Project:
+USBPcap – USB packet capture for Windows
+Copyright: Tomasz Moń and USBPcap contributors
+
+Version used by Egret2MAME:
+1.5.4.0
+
+Official upstream project:
+https://github.com/desowin/usbpcap
+
+The complete corresponding source archive for the redistributed version is included in this directory as:
+
+    USBPcap-1.5.4.0-source.zip
+
+The original license files from the USBPcap 1.5.4.0 source distribution are also included in this directory.
+
+USBPcap is third-party software. Egret2MAME is an independent project and does not claim ownership of USBPcap.
+
+See the included upstream license files and source archive for the applicable license terms and copyright notices.
